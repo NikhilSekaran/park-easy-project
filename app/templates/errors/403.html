@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}403 Forbidden — ParkEasy{% endblock %}
+{% block content %}
+<div class="text-center py-5">
+    <h1 class="display-1 text-danger">403</h1>
+    <p class="lead">You don't have permission to access this page.</p>
+    <p class="text-muted">This area is restricted to admin users.</p>
+    <a href="{{ url_for('main.dashboard') if current_user.is_authenticated else url_for('auth.login') }}"
+       class="btn btn-primary">
+       {{ "Go to Dashboard" if current_user.is_authenticated else "Go to Login" }}
+    </a>
+</div>
+{% endblock %}
