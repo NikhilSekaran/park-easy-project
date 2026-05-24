@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — ParkEasy{% endblock %}
+
+{% block extra_head %}
+{# H8: auto-refresh every 60 s; disable with ?live=0 for accessibility #}
+{% if request.args.get("live") != "0" %}
+<meta http-equiv="refresh" content="60">
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+
+        {# H4: Dismissible announcement banner from admin #}
+        {% if notice %}
+        <div class="alert alert-info alert-dismissible fade show" role="alert">
+            {{ notice.message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+
+        {% if session and session.exit_time and not session.paid %}
+        {# G4: Session exited but payment incomplete — show retry button + parking details #}
+        <div class="alert alert-warning">
+            <strong>Payment Incomplete</strong> — Your parking fee of ₹{{ "%.2f"|format(session.fee or 0) }} is pending.
+            <form method="POST" action="{{ url_for('main.retry_payment') }}" class="d-inline ms-2">
+                {{ form.hidden_tag() }}
+                <button class="btn btn-sm btn-warning">Retry Payment</button>
+            </form>
+        </div>
+        <div class="card border-warning shadow-sm">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">Session Details</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Spot</dt>
+                    <dd class="col-sm-8"><strong>{{ session.spot.spot_number }}</strong></dd>
+                    <dt class="col-sm-4">Vehicle</dt>
+                    <dd class="col-sm-8">{{ session.vehicle_number }}</dd>
+                    <dt class="col-sm-4">Entry Time</dt>
+                    <dd class="col-sm-8">{{ session.entry_time | to_ist }}</dd>
+                    <dt class="col-sm-4">Exit Time</dt>
+                    <dd class="col-sm-8">{{ session.exit_time | to_ist }}</dd>
+                    <dt class="col-sm-4 fw-bold">Fee Due</dt>
+                    <dd class="col-sm-8 fw-bold text-danger">₹{{ "%.2f"|format(session.fee or 0) }}</dd>
+                </dl>
+            </div>
+        </div>
+        {% elif session %}
+        {# Active session — show parking details + exit button #}
+        <div class="card border-success shadow-sm">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">You are parked</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Spot</dt>
+                    <dd class="col-sm-8"><strong>{{ session.spot.spot_number }}</strong></dd>
+
+                    <dt class="col-sm-4">Vehicle</dt>
+                    <dd class="col-sm-8">{{ session.vehicle_number }}</dd>
+
+                    <dt class="col-sm-4">Entry Time</dt>
+                    <dd class="col-sm-8">{{ session.entry_time | to_ist }}</dd>
+
+                    <dt class="col-sm-4">Duration</dt>
+                    <dd class="col-sm-8">
+                        {% if duration_minutes is not none %}
+                            {{ duration_minutes // 60 }} hr {{ duration_minutes % 60 }} min
+                        {% else %}
+                            —
+                        {% endif %}
+                    </dd>
+
+                    {# H1: Live fee estimate — updated every second via JS #}
+                    <dt class="col-sm-4">Est. Fee</dt>
+                    <dd class="col-sm-8 text-primary fw-bold" id="liveFee">calculating…</dd>
+                </dl>
+            </div>
+            <div class="card-footer">
+                <form method="POST" action="{{ url_for('main.exit') }}">
+                    {{ form.hidden_tag() }}
+                    <button type="submit" class="btn btn-danger">Exit &amp; Pay</button>
+                </form>
+            </div>
+        </div>
+
+        {% else %}
+        {# No active session — show check-in form #}
+        {% if not spots_available %}
+        <div class="alert alert-warning">
+            <strong>Parking Full</strong> — No spots are currently available. Please check back later.
+        </div>
+        {% endif %}
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Check In</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.checkin') }}" novalidate>
+                    {{ form.hidden_tag() }}
+                    {# H7: Saved vehicle quick-fill buttons #}
+                    {% if user_vehicles %}
+                    <div class="mb-2">
+                        <label class="form-label text-muted small">Saved vehicles</label>
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                            {% for v in user_vehicles %}
+                            <button type="button" class="btn btn-outline-secondary btn-sm"
+                                    onclick="document.getElementById('vehicle_number').value='{{ v.vehicle_number }}'">
+                                {{ v.label or v.vehicle_number }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        {{ form.vehicle_number.label(class="form-label") }}
+                        {{ form.vehicle_number(id="vehicle_number", class="form-control" + (" is-invalid" if form.vehicle_number.errors else ""), placeholder="e.g. MH12AB1234", maxlength=20) }}
+                        {% for error in form.vehicle_number.errors %}
+                            <div class="invalid-feedback">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    {{ form.submit(class="btn btn-primary", disabled=(not spots_available)) }}
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if history %}
+        <div class="mt-4">
+            <h6 class="text-muted">Recent Sessions</h6>
+            <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+                <thead class="table-secondary">
+                    <tr><th>Vehicle</th><th>Spot</th><th>Entry</th><th>Exit</th><th>Fee</th></tr>
+                </thead>
+                <tbody>
+                {% for s in history %}
+                <tr>
+                    <td>{{ s.vehicle_number }}</td>
+                    <td>{{ s.spot.spot_number }}</td>
+                    <td>{{ s.entry_time.strftime("%d %b %Y %H:%M") }}</td>
+                    <td>{{ s.exit_time.strftime("%d %b %Y %H:%M") if s.exit_time else "—" }}</td>
+                    <td>₹{{ "%.2f"|format(s.fee) }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+
+{# H8: auto-refresh opt-out link #}
+{% if request.args.get("live") != "0" %}
+<p class="text-muted text-center mt-4" style="font-size:.8rem;">
+    Page auto-refreshes every 60 s.
+    <a href="{{ request.path }}?live=0">Disable</a>
+</p>
+{% endif %}
+
+{# H1: Live fee estimator — recalculates every second using entry_time + hourly_rate #}
+{% if entry_time_iso %}
+<script>
+(function () {
+    var entry = new Date("{{ entry_time_iso }}");
+    var rate  = {{ hourly_rate }};
+    var el    = document.getElementById("liveFee");
+    if (!el || isNaN(entry.getTime())) return;
+    function update() {
+        var mins  = (Date.now() - entry.getTime()) / 60000;
+        var hours = Math.max(1, Math.ceil(mins / 60));
+        el.textContent = "₹" + (rate * hours).toFixed(2);
+    }
+    update();
+    setInterval(update, 1000);
+})();
+</script>
+{% endif %}
+{% endblock %}
