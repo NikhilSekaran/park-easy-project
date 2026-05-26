@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Pay & Exit — ParkEasy{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Fee Breakdown</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">Vehicle</dt>
+                    <dd class="col-sm-7">{{ session.vehicle_number }}</dd>
+
+                    <dt class="col-sm-5">Spot</dt>
+                    <dd class="col-sm-7">{{ session.spot.spot_number }}</dd>
+
+                    <dt class="col-sm-5">Entry Time</dt>
+                    <dd class="col-sm-7">{{ session.entry_time | to_ist }}</dd>
+
+                    <dt class="col-sm-5">Duration</dt>
+                    <dd class="col-sm-7">
+                        {{ "%.1f"|format(duration_hours) }} hrs
+                        {% if duration_hours < 1.0 %}
+                        <small class="text-muted d-block">(minimum 1 hour applies)</small>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-5">Rate</dt>
+                    <dd class="col-sm-7">₹{{ hourly_rate }}/hr</dd>
+
+                    <dt class="col-sm-5 fw-bold fs-5">Total</dt>
+                    <dd class="col-sm-7 fw-bold fs-5 text-success">₹{{ "%.2f"|format(fee) }}</dd>
+                </dl>
+            </div>
+            <div class="card-footer text-center">
+                <button id="rzp-button" class="btn btn-success btn-lg">Pay ₹{{ "%.2f"|format(fee) }}</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Hidden form posted to callback after Razorpay checkout completes #}
+<form id="rzp-callback-form" method="POST" action="{{ url_for('main.payment_callback') }}">
+    {{ form.hidden_tag() }}
+    <input type="hidden" name="razorpay_payment_id" id="rzp_payment_id">
+    <input type="hidden" name="razorpay_order_id" id="rzp_order_id">
+    <input type="hidden" name="razorpay_signature" id="rzp_signature">
+</form>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+    var options = {
+        key: "{{ razorpay_key_id }}",
+        amount: "{{ (fee * 100)|int }}",
+        currency: "INR",
+        name: "ParkEasy",
+        description: "Parking Fee",
+        order_id: "{{ order_id }}",
+        handler: function(response) {
+            document.getElementById("rzp_payment_id").value = response.razorpay_payment_id;
+            document.getElementById("rzp_order_id").value = response.razorpay_order_id;
+            document.getElementById("rzp_signature").value = response.razorpay_signature;
+            document.getElementById("rzp-callback-form").submit();
+        },
+        prefill: {
+            email: "{{ current_user.email }}"
+        },
+        theme: { color: "#0d6efd" }
+    };
+    var rzp = new Razorpay(options);
+    document.getElementById("rzp-button").onclick = function(e) {
+        rzp.open();
+        e.preventDefault();
+    };
+</script>
+{% endblock %}
