@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Manage Spots — ParkEasy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Parking Spots</h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('admin.spot_utilization') }}" class="btn btn-sm btn-outline-info">View Utilization Report</a>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-sm btn-outline-secondary">← Dashboard</a>
+    </div>
+</div>
+
+<div class="card mb-4 shadow-sm">
+    <div class="card-header">Add New Spot</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('admin.spots') }}" class="row g-2 align-items-end">
+            {{ form.hidden_tag() }}
+            <div class="col-auto">
+                {{ form.spot_number.label(class="form-label") }}
+                {{ form.spot_number(class="form-control" + (" is-invalid" if form.spot_number.errors else ""), style="width:120px") }}
+                {% for e in form.spot_number.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-auto">
+                {{ form.submit(class="btn btn-primary") }}
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-4 shadow-sm">
+    <div class="card-header">Bulk Add Spots</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('admin.add_spots_bulk') }}" class="row g-2 align-items-end">
+            {{ bulk_form.hidden_tag() }}
+            <div class="col-auto">
+                {{ bulk_form.start_number.label(class="form-label") }}
+                {{ bulk_form.start_number(class="form-control" + (" is-invalid" if bulk_form.start_number.errors else ""), style="width:120px") }}
+            </div>
+            <div class="col-auto">
+                {{ bulk_form.count.label(class="form-label") }}
+                {{ bulk_form.count(class="form-control" + (" is-invalid" if bulk_form.count.errors else ""), style="width:100px") }}
+            </div>
+            <div class="col-auto">
+                {{ bulk_form.submit(class="btn btn-secondary") }}
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if spots %}
+<form method="POST" action="{{ url_for('admin.bulk_toggle_spots') }}" id="spotsForm">
+    {{ bulk_toggle_form.hidden_tag() }}
+    <table class="table table-bordered table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th style="width:40px">
+                    <input type="checkbox" id="selectAll" title="Select all toggleable spots">
+                </th>
+                <th>Spot #</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for spot in spots %}
+            <tr>
+                <td>
+                    {% if spot.status != "occupied" %}
+                    <input type="checkbox" name="spot_ids" value="{{ spot.id }}" class="spot-cb">
+                    {% endif %}
+                </td>
+                <td>{{ spot.spot_number }}</td>
+                <td>
+                    {% if spot.status == "available" %}<span class="badge bg-success">Available</span>
+                    {% elif spot.status == "occupied" %}<span class="badge bg-warning text-dark">Occupied</span>
+                    {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                </td>
+                <td>
+                    {% if spot.status != "occupied" %}
+                    <button type="submit"
+                            formaction="{{ url_for('admin.toggle_spot', spot_id=spot.id) }}"
+                            class="btn btn-sm btn-outline-{{ 'danger' if spot.status == 'available' else 'success' }}">
+                        {{ "Deactivate" if spot.status == "available" else "Activate" }}
+                    </button>
+                    {% else %}
+                    <span class="text-muted" title="Cannot toggle — spot is currently occupied">
+                        — <small>(in use)</small>
+                    </span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="d-flex gap-2 align-items-center mt-2 mb-4">
+        <select name="action" class="form-select form-select-sm" style="width:auto">
+            <option value="activate">Activate</option>
+            <option value="deactivate">Deactivate</option>
+        </select>
+        <button type="submit" class="btn btn-sm btn-primary">Apply to Selected</button>
+        <span id="selectedCount" class="text-muted small">0 selected</span>
+    </div>
+</form>
+{% else %}
+<p class="text-muted">No spots yet. Add one above.</p>
+{% endif %}
+
+<script>
+(function () {
+    var cbs = document.querySelectorAll('.spot-cb');
+    var selectAll = document.getElementById('selectAll');
+    var countEl = document.getElementById('selectedCount');
+
+    function updateCount() {
+        var n = document.querySelectorAll('.spot-cb:checked').length;
+        countEl.textContent = n + ' selected';
+        if (selectAll) selectAll.indeterminate = n > 0 && n < cbs.length;
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            cbs.forEach(function (cb) { cb.checked = selectAll.checked; });
+            updateCount();
+        });
+    }
+
+    cbs.forEach(function (cb) { cb.addEventListener('change', updateCount); });
+}());
+</script>
+{% endblock %}

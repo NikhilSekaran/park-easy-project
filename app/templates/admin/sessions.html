@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}All Sessions — ParkEasy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Parking Sessions</h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('admin.export_sessions') }}" class="btn btn-sm btn-outline-success">⬇ Export CSV</a>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-sm btn-outline-secondary">← Dashboard</a>
+    </div>
+</div>
+
+{# G6: Filter form #}
+<form method="GET" action="{{ url_for('admin.sessions') }}" class="row g-2 mb-3">
+    <div class="col-auto">
+        <input name="vehicle" value="{{ vehicle }}" class="form-control form-control-sm"
+               placeholder="Vehicle number">
+    </div>
+    <div class="col-auto">
+        <input type="date" name="from" value="{{ from_date }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-auto">
+        <input type="date" name="to" value="{{ to_date }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-auto">
+        <select name="paid" class="form-select form-select-sm">
+            <option value=""  {% if paid == "" %}selected{% endif %}>All</option>
+            <option value="1" {% if paid == "1" %}selected{% endif %}>Paid</option>
+            <option value="0" {% if paid == "0" %}selected{% endif %}>Unpaid</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-sm btn-primary">Filter</button>
+        <a href="{{ url_for('admin.sessions') }}" class="btn btn-sm btn-outline-secondary ms-1">Clear</a>
+    </div>
+</form>
+
+{% if pagination.items %}
+<div class="table-responsive">
+<table class="table table-bordered table-hover table-sm">
+    <thead class="table-dark">
+        <tr>
+            <th>#</th><th>User</th><th>Vehicle</th><th>Spot</th>
+            <th>Entry</th><th>Exit</th><th>Fee</th><th>Status</th>
+            <th>Note</th><th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for s in pagination.items %}
+        {# G7: Highlight rows where session is still active and older than overstay threshold #}
+        {% set duration_h = ((now - s.entry_time).total_seconds() / 3600) if not s.exit_time else 0 %}
+        <tr class="{{ 'table-warning' if duration_h > overstay_hours else '' }}">
+            <td>{{ s.id }}</td>
+            <td>{{ s.user.email }}</td>
+            <td>{{ s.vehicle_number }}</td>
+            <td>{{ s.spot.spot_number }}</td>
+            <td>{{ s.entry_time | to_ist }}</td>
+            <td>{{ s.exit_time | to_ist }}</td>
+            <td>{{ "₹%.2f"|format(s.fee) if s.fee else "—" }}</td>
+            <td>
+                {% if s.paid %}
+                    <span class="badge bg-success">Paid</span>
+                {% elif s.exit_time %}
+                    <span class="badge bg-danger">Unpaid</span>
+                {% else %}
+                    <span class="badge bg-warning text-dark">Active</span>
+                {% endif %}
+            </td>
+            {# H9: inline admin note form #}
+            <td>
+                <form method="POST"
+                      action="{{ url_for('admin.set_session_note', session_id=s.id) }}"
+                      class="d-flex gap-1">
+                    {{ note_form.hidden_tag() }}
+                    <input name="note" value="{{ s.admin_note or '' }}"
+                           class="form-control form-control-sm" style="width:140px"
+                           placeholder="Add note…" maxlength="200">
+                    <button class="btn btn-sm btn-outline-secondary">✓</button>
+                </form>
+            </td>
+            {# H3: Force Close button — only for active sessions #}
+            <td>
+                {% if not s.exit_time %}
+                <form method="POST"
+                      action="{{ url_for('admin.force_close_session', session_id=s.id) }}"
+                      onsubmit="return confirm('Force-close session #{{ s.id }}?')">
+                    {{ note_form.hidden_tag() }}
+                    <button class="btn btn-sm btn-outline-danger">Force Close</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<nav>
+    <ul class="pagination pagination-sm">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('admin.sessions', page=pagination.prev_num, vehicle=vehicle, from=from_date, to=to_date, paid=paid) }}">Previous</a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled">
+            <span class="page-link">
+                Page {{ pagination.page }} of {{ pagination.pages }}
+                <span class="text-muted ms-2">({{ pagination.total }} total)</span>
+            </span>
+        </li>
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('admin.sessions', page=pagination.next_num, vehicle=vehicle, from=from_date, to=to_date, paid=paid) }}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% else %}
+<p class="text-muted">No sessions found.</p>
+{% endif %}
+
+{# G7: Legend always visible so admin knows the highlighting rule #}
+<p class="text-muted small mt-2">
+    <span class="badge bg-warning text-dark">Highlighted</span> = active &gt; {{ overstay_hours }}h
+</p>
+{% endblock %}

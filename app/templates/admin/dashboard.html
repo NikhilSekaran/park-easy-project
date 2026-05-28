@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — ParkEasy{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Admin Dashboard</h2>
+<div class="row g-3">
+    <div class="col-sm-3">
+        <div class="card text-center border-secondary">
+            <div class="card-body">
+                <h3>{{ total }}</h3>
+                <small class="text-muted">Total Spots</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-3">
+        <div class="card text-center border-success">
+            <div class="card-body">
+                <h3 class="text-success">{{ available }}</h3>
+                <small class="text-muted">Available</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-3">
+        <div class="card text-center border-warning">
+            <div class="card-body">
+                <h3 class="text-warning">{{ occupied }}</h3>
+                <small class="text-muted">Occupied</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-3">
+        <div class="card text-center border-danger">
+            <div class="card-body">
+                <h3 class="text-danger">{{ inactive }}</h3>
+                <small class="text-muted">Inactive</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mt-2">
+    <div class="col-sm-4">
+        <div class="card text-center border-info">
+            <div class="card-body">
+                <h3 class="text-info">{{ total_sessions }}</h3>
+                <small class="text-muted">Total Sessions</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="card text-center border-primary">
+            <div class="card-body">
+                <h3 class="text-primary">₹{{ "%.2f"|format(today_revenue) }}</h3>
+                <small class="text-muted">Today's Revenue</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="card text-center border-success">
+            <div class="card-body">
+                <h3 class="text-success">₹{{ "%.2f"|format(total_revenue) }}</h3>
+                <small class="text-muted">All-time Revenue</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4 d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('admin.spots') }}" class="btn btn-outline-primary">Manage Spots</a>
+    <a href="{{ url_for('admin.sessions') }}" class="btn btn-outline-secondary">View Sessions</a>
+    <a href="{{ url_for('admin.pricing') }}" class="btn btn-outline-success">Update Pricing</a>
+    <a href="{{ url_for('admin.revenue') }}" class="btn btn-outline-info">Revenue Report</a>
+    <a href="{{ url_for('admin.users') }}" class="btn btn-outline-dark">View Users</a>
+    <a href="{{ url_for('admin.announcement') }}" class="btn btn-outline-warning">Announcement</a>
+    <a href="{{ url_for('admin.activity_log') }}" class="btn btn-outline-secondary">Activity Log</a>
+</div>
+
+{# G8: Revenue and occupancy charts via Chart.js CDN #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<div class="row mt-4">
+    <div class="col-md-7">
+        <div class="card shadow-sm p-3">
+            <h6 class="card-title">Revenue — Last 7 Days (₹)</h6>
+            <canvas id="revenueChart" height="120"></canvas>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card shadow-sm p-3">
+            <h6 class="card-title">Spot Occupancy</h6>
+            <canvas id="occupancyChart" height="120"></canvas>
+        </div>
+    </div>
+</div>
+<script>
+fetch("{{ url_for('admin.stats_json') }}")
+    .then(r => r.json())
+    .then(data => {
+        new Chart(document.getElementById("revenueChart"), {
+            type: "bar",
+            data: {
+                labels: data.labels,
+                datasets: [{ label: "Revenue (₹)", data: data.revenue,
+                             backgroundColor: "rgba(13,110,253,0.7)" }]
+            },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+        new Chart(document.getElementById("occupancyChart"), {
+            type: "doughnut",
+            data: {
+                labels: ["Available", "Occupied", "Inactive"],
+                datasets: [{ data: [data.occupancy.available,
+                                    data.occupancy.occupied,
+                                    data.occupancy.inactive],
+                             backgroundColor: ["#198754", "#dc3545", "#6c757d"] }]
+            }
+        });
+    });
+</script>
+{% endblock %}

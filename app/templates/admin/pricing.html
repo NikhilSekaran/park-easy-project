@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Pricing — ParkEasy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Pricing Configuration</h2>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-sm btn-outline-secondary">← Dashboard</a>
+</div>
+
+<div class="card shadow-sm" style="max-width:400px">
+    <div class="card-header">
+        Current Rate: <strong>₹{{ config.hourly_rate if config else "not set" }}/hr</strong>
+        {% if config %}<small class="text-muted ms-2">(updated {{ config.updated_at.strftime("%d %b %Y") }})</small>{% endif %}
+    </div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('admin.pricing') }}">
+            {{ form.hidden_tag() }}
+            <div class="mb-3">
+                {{ form.hourly_rate.label(class="form-label") }}
+                {{ form.hourly_rate(class="form-control" + (" is-invalid" if form.hourly_rate.errors else "")) }}
+                {% for e in form.hourly_rate.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+                {{ form.grace_minutes.label(class="form-label") }}
+                <div class="input-group">
+                    {{ form.grace_minutes(class="form-control" + (" is-invalid" if form.grace_minutes.errors else "")) }}
+                    <span class="input-group-text">min</span>
+                </div>
+                <div class="form-text">Sessions within this window are charged ₹0. Set to 0 to disable.</div>
+                {% for e in form.grace_minutes.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+            </div>
+            {{ form.submit(class="btn btn-primary") }}
+        </form>
+    </div>
+</div>
+{% endblock %}
