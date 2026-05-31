@@ -1,0 +1,15 @@
+﻿[Unit]
+Description=ParkEasy Flask Application
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/park-easy
+EnvironmentFile=/opt/park-easy/.env
+ExecStart=/usr/bin/make -C /opt/park-easy prod
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
