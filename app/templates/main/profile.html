@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}My Profile — ParkEasy{% endblock %}
+{% block content %}
+<div class="card shadow-sm" style="max-width:480px; margin: 2rem auto;">
+    <div class="card-header"><strong>My Account</strong></div>
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-5">Email</dt>
+            <dd class="col-sm-7">{{ current_user.email }}</dd>
+            <dt class="col-sm-5">Role</dt>
+            <dd class="col-sm-7">{{ current_user.role }}</dd>
+            <dt class="col-sm-5">Member since</dt>
+            <dd class="col-sm-7">{{ current_user.created_at.strftime("%d %b %Y") }}</dd>
+            <dt class="col-sm-5">Total sessions</dt>
+            <dd class="col-sm-7">{{ total_sessions }}</dd>
+            <dt class="col-sm-5">Total spent</dt>
+            <dd class="col-sm-7">₹{{ "%.2f"|format(total_spent) }}</dd>
+        </dl>
+    </div>
+    <div class="card-footer text-end">
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-outline-secondary">Back</a>
+    </div>
+</div>
+{% endblock %}
