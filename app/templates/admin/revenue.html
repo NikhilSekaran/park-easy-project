@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Revenue Report — ParkEasy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Revenue Report <small class="text-muted fs-6">(last 30 days)</small></h2>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-sm btn-outline-secondary">← Dashboard</a>
+</div>
+
+{% if daily %}
+<div class="table-responsive">
+<table class="table table-bordered table-hover table-sm">
+    <thead class="table-dark">
+        <tr>
+            <th>Date</th>
+            <th class="text-end">Sessions</th>
+            <th class="text-end">Revenue</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in daily %}
+    <tr>
+        <td>{{ row.day }}</td>
+        <td class="text-end">{{ row.sessions }}</td>
+        <td class="text-end">₹{{ "%.2f"|format(row.revenue) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p class="text-muted">No completed sessions yet.</p>
+{% endif %}
+{% endblock %}
