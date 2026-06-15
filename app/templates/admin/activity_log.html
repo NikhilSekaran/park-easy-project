@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Activity Log — ParkEasy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Activity Log</h2>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-sm btn-outline-secondary">← Dashboard</a>
+</div>
+
+<form method="GET" action="{{ url_for('admin.activity_log') }}" class="row g-2 mb-3">
+    <div class="col-auto">
+        <select name="action" class="form-select form-select-sm">
+            <option value="" {% if not action_filter %}selected{% endif %}>All actions</option>
+            {% for a in distinct_actions %}
+            <option value="{{ a }}" {% if action_filter == a %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-sm btn-primary">Filter</button>
+        <a href="{{ url_for('admin.activity_log') }}" class="btn btn-sm btn-outline-secondary ms-1">Clear</a>
+    </div>
+</form>
+
+{% if entries %}
+<div class="table-responsive">
+<table class="table table-sm table-bordered table-hover">
+    <thead class="table-dark">
+        <tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+    {% for entry in entries %}
+    <tr>
+        <td class="text-nowrap">{{ entry.created_at.strftime("%d %b %Y %H:%M") }}</td>
+        <td>{{ entry.user.email if entry.user else "—" }}</td>
+        <td><span class="badge bg-secondary">{{ entry.action }}</span></td>
+        <td>{{ entry.detail or "—" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<nav>
+    <ul class="pagination pagination-sm">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('admin.activity_log', page=pagination.prev_num, action=action_filter) }}">Previous</a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ pagination.page }} of {{ pagination.pages }} ({{ pagination.total }} total)</span>
+        </li>
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('admin.activity_log', page=pagination.next_num, action=action_filter) }}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% else %}
+<p class="text-muted">No activity recorded yet.</p>
+{% endif %}
+{% endblock %}

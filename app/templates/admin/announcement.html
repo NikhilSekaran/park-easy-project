@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Announcement — ParkEasy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Announcement Banner</h2>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-sm btn-outline-secondary">← Dashboard</a>
+</div>
+
+{% if current %}
+<div class="alert alert-{{ 'info' if current.is_active else 'secondary' }} mb-4">
+    <strong>Current:</strong> {{ current.message }}
+    <span class="badge {{ 'bg-success' if current.is_active else 'bg-secondary' }} ms-2">
+        {{ 'Active' if current.is_active else 'Hidden' }}
+    </span>
+</div>
+{% else %}
+<p class="text-muted">No announcement set yet.</p>
+{% endif %}
+
+<div class="card shadow-sm" style="max-width:560px;">
+    <div class="card-header">{{ "Edit" if current else "Create" }} Announcement</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('admin.announcement') }}">
+            {{ form.hidden_tag() }}
+            <div class="mb-3">
+                {{ form.message.label(class="form-label") }}
+                {{ form.message(class="form-control" + (" is-invalid" if form.message.errors else ""), rows=3, maxlength=280) }}
+                {% for e in form.message.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+                <div class="form-text">Max 280 characters.</div>
+            </div>
+            <div class="mb-3 form-check">
+                {{ form.is_active(class="form-check-input") }}
+                {{ form.is_active.label(class="form-check-label") }}
+            </div>
+            {{ form.submit(class="btn btn-primary") }}
+        </form>
+    </div>
+</div>
+{% endblock %}

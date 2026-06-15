@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Spot Utilization — ParkEasy{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Spot Utilization</h2>
+    <a href="{{ url_for('admin.spots') }}" class="btn btn-sm btn-outline-secondary">← Spots</a>
+</div>
+
+<table class="table table-bordered table-sm table-hover">
+    <thead class="table-dark">
+        <tr>
+            <th>Spot #</th>
+            <th>Status</th>
+            <th>Sessions</th>
+            <th class="text-end">Revenue (₹)</th>
+            <th>Last Used</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for spot, sessions, revenue, last_used in rows %}
+    <tr>
+        <td>{{ spot.spot_number }}</td>
+        <td>
+            <span class="badge bg-{{ 'success' if spot.status == 'available' else 'danger' if spot.status == 'occupied' else 'secondary' }}">
+                {{ spot.status }}
+            </span>
+        </td>
+        <td>{{ sessions }}</td>
+        <td class="text-end">{{ "%.2f"|format(revenue or 0) }}</td>
+        <td>{{ last_used.strftime("%d %b %Y") if last_used else "Never" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

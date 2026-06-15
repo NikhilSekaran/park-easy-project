@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Receipt #{{ session.id }} — ParkEasy{% endblock %}
+
+{% block content %}
+<style>
+@media print {
+    nav, .btn, footer, p.text-muted { display: none !important; }
+    body { font-size: 12pt; }
+}
+</style>
+<div class="card shadow-sm mx-auto mt-4" style="max-width:520px;">
+    <div class="card-header d-flex justify-content-between">
+        <strong>ParkEasy — Payment Receipt</strong>
+        <span class="text-muted">#{{ session.id }}</span>
+    </div>
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-5">Vehicle</dt>
+            <dd class="col-7">{{ session.vehicle_number }}</dd>
+            <dt class="col-5">Spot</dt>
+            <dd class="col-7">{{ session.spot.spot_number }}</dd>
+            <dt class="col-5">Entry</dt>
+            <dd class="col-7">{{ session.entry_time.strftime("%d %b %Y %H:%M") }}</dd>
+            <dt class="col-5">Exit</dt>
+            <dd class="col-7">{{ session.exit_time.strftime("%d %b %Y %H:%M") }}</dd>
+            <dt class="col-5">Duration</dt>
+            <dd class="col-7">
+                {% set mins = ((session.exit_time - session.entry_time).total_seconds() // 60) | int %}
+                {{ mins // 60 }}h {{ mins % 60 }}m
+            </dd>
+            <dt class="col-5 fw-bold">Amount Paid</dt>
+            <dd class="col-7 fw-bold">₹{{ "%.2f"|format(session.fee) }}</dd>
+        </dl>
+    </div>
+    <div class="card-footer text-end">
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">Print / Save PDF</button>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary btn-sm ms-2">Back</a>
+    </div>
+</div>
+{% endblock %}
