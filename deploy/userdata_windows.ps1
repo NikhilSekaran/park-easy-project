@@ -3,34 +3,48 @@
 # ParkEasy -- EC2 Windows User Data Script
 # Runs automatically on first boot of a new Windows Server EC2 instance.
 #
-# Prerequisites (set up once before launching the instance):
-#   1. Store the .env content in SSM Parameter Store:
-#        aws ssm put-parameter --name "/parkeasy/env" --type "SecureString" --value (Get-Content .env -Raw) --overwrite
-#   2. Attach an IAM role to the EC2 instance with AmazonSSMReadOnlyAccess
-#   3. Set GITHUB_TOKEN below (or store in SSM as /parkeasy/github_token)
+# Prerequisites (one-time setup from your local machine):
 #
-# Usage -- launch EC2 with this script as User Data:
-#   $userData = Get-Content "deploy\userdata_windows.ps1" -Raw
-#   $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($userData))
-#   aws ec2 run-instances --image-id <ami-id> --instance-type t3.small \
-#     --key-name <key-pair> --security-group-ids <sg-id> \
-#     --iam-instance-profile Name=<profile-with-ssm-access> \
-#     --user-data $b64
+#   1. Create .env file with your secrets, then store it in SSM:
+#        aws ssm put-parameter --name "/parkeasy/env" --type "SecureString" `
+#          --value (Get-Content .env -Raw) --overwrite
+#
+#   2. Create IAM Role:
+#        IAM Console -> Roles -> Create Role -> EC2
+#        Attach policy: AmazonSSMReadOnlyAccess
+#        Also attach inline policy for KMS decrypt (if using SecureString):
+#          { "Effect": "Allow", "Action": "ssm:GetParameter", "Resource": "arn:aws:ssm:*:*:parameter/parkeasy/*" }
+#        Name: EC2-ParkEasy-SSM-Role
+#
+#   3. When launching EC2:
+#        - Attach IAM Instance Profile: EC2-ParkEasy-SSM-Role
+#        - Paste this entire script into Advanced Details -> User Data
+#
+# Monitor bootstrap progress:
+#        Get-Content C:\userdata_bootstrap.log -Wait -Tail 30
 # =============================================================================
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"   # Don't abort on non-fatal errors (e.g. SSM unavailable)
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION -- edit before use
 # ---------------------------------------------------------------------------
-$AppDir     = "C:\park-easy"
-$RepoUrl    = "https://github.com/yourusername/park-easy-project.git"   # replace
-$GitHubToken = ""   # set token here OR leave blank to fetch from SSM /parkeasy/github_token
-$SsmEnvParam = "/parkeasy/env"           # SSM parameter holding the full .env content
-$SsmTokenParam = "/parkeasy/github_token"  # SSM parameter for GitHub token (optional)
-$ServiceName = "parking"
-$LogFile    = "C:\userdata_bootstrap.log"
+$AppDir      = "C:\park-easy"
+$RepoUrl     = "https://github.com/NikhilSekaran/park-easy-project.git"
+$GitHubToken = ""    # Leave blank for public repos. Set token for private repos.
+                     # Or store in SSM as /parkeasy/github_token and set IAM role.
+$SsmEnvParam   = "/parkeasy/env"           # SSM parameter with full .env content (optional)
+$SsmTokenParam = ""                        # SSM parameter for GitHub token; leave blank if public
+$ServiceName   = "parking"
+$LogFile       = "C:\userdata_bootstrap.log"
+
+# ---------------------------------------------------------------------------
+# INLINE .env -- PRIMARY: SSM Parameter Store (recommended, works with auto-scaling)
+# Set $InlineEnv = "" to use SSM (requires IAM role with AmazonSSMReadOnlyAccess).
+# Set $InlineEnv to a heredoc string only for quick one-off local testing.
+# ---------------------------------------------------------------------------
+$InlineEnv = ""   # SSM is the primary path -- do not put secrets here
 
 # ---------------------------------------------------------------------------
 # Logging helper
@@ -65,7 +79,8 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
 # ---------------------------------------------------------------------------
 Write-Log "Step 3: System packages"
 foreach ($pkg in @("python", "git", "nssm")) {
-    $installed = choco list --local-only $pkg 2>$null | Select-String "^$pkg "
+    # 'choco list --local-only' is deprecated in newer Chocolatey; use 'choco list' instead
+    $installed = choco list $pkg --limit-output --local-only 2>$null | Select-String "^$pkg\|"
     if (-not $installed) {
         choco install $pkg -y --no-progress
     } else {
@@ -82,17 +97,27 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";"
 # ---------------------------------------------------------------------------
 Write-Log "Step 4: Clone repository"
 
-# Fetch GitHub token from SSM if not hardcoded
-if ([string]::IsNullOrWhiteSpace($GitHubToken)) {
-    Write-Log "Fetching GitHub token from SSM $SsmTokenParam"
-    $GitHubToken = (aws ssm get-parameter --name $SsmTokenParam --with-decryption --query "Parameter.Value" --output text 2>$null)
-}
-
 if (Test-Path (Join-Path $AppDir ".git")) {
     Write-Log "Repo exists -- pulling latest"
     git -C $AppDir pull
 } else {
-    $cloneUrl = $RepoUrl -replace "https://", "https://$GitHubToken@"
+    $cloneUrl = $RepoUrl   # default: public repo, no token needed
+    if (-not [string]::IsNullOrWhiteSpace($GitHubToken)) {
+        # Token hardcoded in script (private repo)
+        $cloneUrl = $RepoUrl -replace "https://", "https://$GitHubToken@"
+        Write-Log "Using hardcoded GitHub token"
+    } elseif (-not [string]::IsNullOrWhiteSpace($SsmTokenParam)) {
+        # Try fetching token from SSM (private repo + SSM setup)
+        $fetchedToken = (aws ssm get-parameter --name $SsmTokenParam --with-decryption --query "Parameter.Value" --output text 2>$null)
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($fetchedToken)) {
+            $cloneUrl = $RepoUrl -replace "https://", "https://$fetchedToken@"
+            Write-Log "Using GitHub token from SSM"
+        } else {
+            Write-Log "SSM token not available -- cloning as public repo"
+        }
+    } else {
+        Write-Log "Public repo -- cloning without token"
+    }
     Write-Log "Cloning repo to $AppDir"
     git clone $cloneUrl $AppDir
 }
@@ -100,12 +125,27 @@ if (Test-Path (Join-Path $AppDir ".git")) {
 # ---------------------------------------------------------------------------
 # Step 5 -- Pull .env from SSM Parameter Store
 # ---------------------------------------------------------------------------
-Write-Log "Step 5: Pull .env from SSM"
+Write-Log "Step 5: Write .env"
 $envFile = Join-Path $AppDir ".env"
 if (-not (Test-Path $envFile)) {
-    $envContent = aws ssm get-parameter --name $SsmEnvParam --with-decryption --query "Parameter.Value" --output text
-    [System.IO.File]::WriteAllText($envFile, $envContent, [System.Text.UTF8Encoding]::new($false))
-    Write-Log ".env written from SSM"
+    if (-not [string]::IsNullOrWhiteSpace($InlineEnv)) {
+        # Path A: inline .env defined in this script (public repo / quick test)
+        [System.IO.File]::WriteAllText($envFile, $InlineEnv.Trim(), [System.Text.UTF8Encoding]::new($false))
+        Write-Log ".env written from inline config"
+    } elseif (-not [string]::IsNullOrWhiteSpace($SsmEnvParam)) {
+        # Path B: fetch .env from SSM Parameter Store (requires IAM role with SSMReadOnly)
+        $envContent = aws ssm get-parameter --name $SsmEnvParam --with-decryption --query "Parameter.Value" --output text 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($envContent)) {
+            [System.IO.File]::WriteAllText($envFile, $envContent, [System.Text.UTF8Encoding]::new($false))
+            Write-Log ".env written from SSM"
+        } else {
+            Write-Log "ERROR: .env not found and SSM fetch failed. Set InlineEnv or configure SSM."
+            exit 1
+        }
+    } else {
+        Write-Log "ERROR: .env not found. Set InlineEnv in this script or configure SsmEnvParam."
+        exit 1
+    }
 } else {
     Write-Log ".env already exists -- skipping"
 }
@@ -128,6 +168,14 @@ if (-not (Test-Path $venvPython)) {
 # ---------------------------------------------------------------------------
 Write-Log "Step 7: DB migrations and seed"
 $env:FLASK_APP = "run.py"
+
+# Load ADMIN_EMAIL and ADMIN_PASSWORD from .env so seed-admin runs non-interactively
+$envVars = Get-Content (Join-Path $AppDir ".env") | Where-Object { $_ -match '^(ADMIN_EMAIL|ADMIN_PASSWORD)=' }
+foreach ($line in $envVars) {
+    $parts = $line -split '=', 2
+    [System.Environment]::SetEnvironmentVariable($parts[0].Trim(), $parts[1].Trim(), 'Process')
+}
+
 & $venvPython -m flask --app run:app db upgrade
 & $venvPython -m flask --app run:app seed-admin
 & $venvPython -m flask --app run:app seed-pricing
@@ -165,7 +213,7 @@ Write-Log "Parking service status: $(& $nssmExe status $ServiceName)"
 Write-Log "Step 9: Nginx"
 
 # Install nginx via Chocolatey if not already present
-$nginxInstalled = choco list --local-only nginx 2>$null | Select-String "^nginx "
+$nginxInstalled = choco list nginx --limit-output --local-only 2>$null | Select-String "^nginx\|"
 if (-not $nginxInstalled) {
     choco install nginx -y --no-progress
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
@@ -181,18 +229,24 @@ if (-not $nginxExePath) {
 $nginxRoot = Split-Path $nginxExePath -Parent
 Write-Log "Nginx root: $nginxRoot"
 
-# Copy parking.conf
+# Copy parking.conf and replace nginx.conf with a clean config
 New-Item -ItemType Directory -Force "$nginxRoot\conf\sites" | Out-Null
 Copy-Item "$AppDir\deploy\nginx_windows.conf" "$nginxRoot\conf\sites\parking.conf" -Force
 
-# Inject include line into nginx.conf if missing
+# Replace nginx.conf entirely to avoid conflicts with the default server block
 $nginxConf = "$nginxRoot\conf\nginx.conf"
-$content = Get-Content $nginxConf -Raw
-if ($content -notmatch "include sites/") {
-    $content = $content -replace "(http\s*\{)", "`$1`n    include sites/*.conf;"
-    Set-Content $nginxConf $content -Encoding ASCII
-    Write-Log "Added include sites/*.conf to nginx.conf"
+@"
+worker_processes 1;
+events { worker_connections 1024; }
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout 65;
+    include sites/*.conf;
 }
+"@ | Set-Content $nginxConf -Encoding UTF8
+Write-Log "nginx.conf replaced with clean config"
 
 # Register nginx as a Windows Service via NSSM
 $nginxSvcStatus = & $nssmExe status nginx 2>$null

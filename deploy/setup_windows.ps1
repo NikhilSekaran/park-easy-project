@@ -122,6 +122,14 @@ $env:FLASK_APP = "run.py"
 # Step 7 - Seed admin & pricing (idempotent)
 # ---------------------------------------------------------------------------
 Write-Step "Step 7: Seed admin user and pricing config"
+
+# Load ADMIN_EMAIL and ADMIN_PASSWORD from .env so seed-admin runs non-interactively
+$envVars = Get-Content $envFile | Where-Object { $_ -match '^(ADMIN_EMAIL|ADMIN_PASSWORD)=' }
+foreach ($line in $envVars) {
+    $parts = $line -split '=', 2
+    [System.Environment]::SetEnvironmentVariable($parts[0].Trim(), $parts[1].Trim(), 'Process')
+}
+
 & $venvPython -m flask --app run:app seed-admin
 & $venvPython -m flask --app run:app seed-pricing
 & $venvPython -m flask --app run:app seed-spots 10
