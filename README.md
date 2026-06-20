@@ -123,6 +123,208 @@ make test          # runs pytest --cov=app
 
 ---
 
+## Architecture
+
+### Data Model (Class / ER Diagram)
+
+```mermaid
+classDiagram
+  class User {
+    int id
+    string email
+    string password_hash
+    string role
+    datetime created_at
+    int failed_logins
+    datetime locked_until
+    datetime last_failed_at
+  }
+  class ParkingSpot {
+    int id
+    int spot_number
+    string status
+  }
+  class ParkingSession {
+    int id
+    int user_id
+    int spot_id
+    string vehicle_number
+    datetime entry_time
+    datetime exit_time
+    Numeric fee
+    bool paid
+    string razorpay_order_id
+    string admin_note
+  }
+  class PricingConfig {
+    int id
+    Numeric hourly_rate
+    int grace_minutes
+    datetime updated_at
+  }
+  class Vehicle {
+    int id
+    int user_id
+    string vehicle_number
+    string label
+  }
+  class Announcement {
+    int id
+    string message
+    bool is_active
+    datetime updated_at
+  }
+  class ActivityLog {
+    int id
+    int user_id
+    string action
+    string detail
+    datetime created_at
+  }
+  User "1" --> "*" ParkingSession : has
+  ParkingSpot "1" --> "*" ParkingSession : used-by
+  User "1" --> "*" Vehicle : owns
+  User "1" --> "*" ActivityLog : logs
+```
+
+*Class / ER Diagram — `status` values: available | occupied | inactive; `role` values: user | admin. `PricingConfig` and `Announcement` are standalone singleton/admin-managed tables.*
+
+---
+
+### Payment Sequence (Check-in → Exit → Razorpay → Callback)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant App as Flask App
+    participant DB as SQLite
+    participant RZ as Razorpay API
+
+    U->>App: POST /checkin with vehicle number
+    App->>DB: find first available spot
+    DB-->>App: spot_id
+    App->>DB: create ParkingSession with entry_time and spot_id
+    App->>DB: mark spot occupied
+    App-->>U: redirect to dashboard active session
+
+    U->>App: POST /exit
+    App->>DB: fetch session and PricingConfig
+    DB-->>App: entry_time and hourly_rate
+    App->>RZ: create order for amount fee
+    RZ-->>App: order_id
+    App-->>U: render payment page with Razorpay Checkout JS
+
+    U->>RZ: complete payment with test card or live card
+    RZ-->>U: redirect to POST /payment/callback
+    U->>App: POST /payment/callback with payment_id order_id signature
+    App->>App: verify HMAC signature
+    App->>DB: mark session paid and set exit_time
+    App->>DB: mark spot available
+    App-->>U: redirect to dashboard check-in state
+```
+
+*Payment Sequence — the fee is calculated and persisted on the `ParkingSession` row at `exit()` time. `payment_callback()` reads the stored fee rather than recalculating, ensuring the amount stored exactly matches the amount charged via Razorpay.*
+
+---
+
+### Deployment Architecture — Linux (Ubuntu 22.04)
+
+```mermaid
+graph TD
+    Browser["Browser or Client"]
+
+    subgraph AWS["AWS Cloud"]
+        subgraph SG["Security Group Inbound Rules"]
+            Port80["Port 80 HTTP from 0.0.0.0/0"]
+            Port443["Port 443 HTTPS from 0.0.0.0/0"]
+            Port22["Port 22 SSH Admin IPs only"]
+        end
+
+        subgraph EC2["EC2 Instance Ubuntu 22.04 t3.micro"]
+            Nginx["Nginx Reverse Proxy port 80 and 443"]
+
+            subgraph Systemd["systemd parking.service Restart always"]
+                Gunicorn["Gunicorn WSGI localhost:8000"]
+                subgraph FlaskApp["Flask Application"]
+                    Blueprints["Blueprints auth main admin"]
+                    ORM["SQLAlchemy ORM"]
+                end
+            end
+
+            DB["SQLite instance parking.db"]
+            DotEnv["dotenv SECRET_KEY and RAZORPAY keys"]
+        end
+    end
+
+    Razorpay["Razorpay API external payment gateway"]
+
+    Browser -->|HTTP and HTTPS| Port80
+    Browser -->|HTTPS| Port443
+    Port80 --> Nginx
+    Port443 --> Nginx
+    Nginx -->|proxy_pass localhost:8000| Gunicorn
+    Gunicorn --> FlaskApp
+    Blueprints --> ORM
+    ORM -->|read and write| DB
+    Systemd -.->|loads env vars| DotEnv
+    FlaskApp -->|create order and verify signature| Razorpay
+    Razorpay -->|redirect callback to payment callback| Browser
+```
+
+*Linux Deployment Architecture — single EC2 instance with Nginx reverse proxy, Gunicorn WSGI server, and systemd process manager.*
+
+---
+
+### Deployment Architecture — Windows (Windows Server 2025)
+
+Gunicorn is Unix-only and cannot run on Windows Server. The Windows path replaces **Gunicorn** with **Waitress** and **systemd** with **NSSM**; everything else (Flask, SQLAlchemy, Razorpay, Nginx) is identical.
+
+```mermaid
+graph TD
+    Browser["Browser or Client"]
+
+    subgraph AWS["AWS Cloud"]
+        subgraph SG["Security Group Inbound Rules"]
+            Port80["Port 80 HTTP from 0.0.0.0/0"]
+            Port443["Port 443 HTTPS from 0.0.0.0/0"]
+            Port3389["Port 3389 RDP Admin IPs only"]
+        end
+
+        subgraph EC2Win["EC2 Instance Windows Server 2025 t3.small"]
+            NginxWin["Nginx for Windows Reverse Proxy port 80 and 443"]
+
+            subgraph NSSM["NSSM parking Windows Service restart on failure"]
+                Waitress["Waitress WSGI localhost:8000 threads 4"]
+                subgraph FlaskAppWin["Flask Application"]
+                    BlueprintsWin["Blueprints auth main admin"]
+                    ORMWin["SQLAlchemy ORM"]
+                end
+            end
+
+            DBWin["SQLite instance parking.db"]
+            DotEnvWin["dotenv SECRET_KEY RAZORPAY keys WAITRESS_THREADS"]
+        end
+    end
+
+    RazorpayWin["Razorpay API external payment gateway"]
+
+    Browser -->|HTTP and HTTPS| Port80
+    Browser -->|HTTPS| Port443
+    Port80 --> NginxWin
+    Port443 --> NginxWin
+    NginxWin -->|proxy_pass localhost:8000| Waitress
+    Waitress --> FlaskAppWin
+    BlueprintsWin --> ORMWin
+    ORMWin -->|read and write| DBWin
+    NSSM -.->|loads env vars| DotEnvWin
+    FlaskAppWin -->|create order and verify signature| RazorpayWin
+    RazorpayWin -->|redirect callback POST /payment/callback| Browser
+```
+
+*Windows Deployment Architecture — single EC2 instance with Nginx reverse proxy, Waitress WSGI server, and NSSM Windows Service manager. This is the validated deployment path (screenshots 40–45).*
+
+---
+
 ## Windows
 
 ### Option A — WSL (recommended)
