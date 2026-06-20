@@ -234,19 +234,11 @@ New-Item -ItemType Directory -Force "$nginxRoot\conf\sites" | Out-Null
 Copy-Item "$AppDir\deploy\nginx_windows.conf" "$nginxRoot\conf\sites\parking.conf" -Force
 
 # Replace nginx.conf entirely to avoid conflicts with the default server block
+# Use WriteAllText with no-BOM UTF8 -- Set-Content -Encoding UTF8 adds a BOM which nginx rejects
 $nginxConf = "$nginxRoot\conf\nginx.conf"
-@"
-worker_processes 1;
-events { worker_connections 1024; }
-http {
-    include       mime.types;
-    default_type  application/octet-stream;
-    sendfile      on;
-    keepalive_timeout 65;
-    include sites/*.conf;
-}
-"@ | Set-Content $nginxConf -Encoding UTF8
-Write-Log "nginx.conf replaced with clean config"
+$nginxContent = "worker_processes 1;`nevents { worker_connections 1024; }`nhttp {`n    include       mime.types;`n    default_type  application/octet-stream;`n    sendfile      on;`n    keepalive_timeout 65;`n    include sites/*.conf;`n}`n"
+[System.IO.File]::WriteAllText($nginxConf, $nginxContent, [System.Text.UTF8Encoding]::new($false))
+Write-Log "nginx.conf replaced with clean config (no BOM)"
 
 # Register nginx as a Windows Service via NSSM
 $nginxSvcStatus = & $nssmExe status nginx 2>$null
